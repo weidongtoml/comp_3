@@ -12,4 +12,5 @@ var KAvailableGenearators map[string]FeatureGenerator
 
 func Init() {
 	KAvailableGenearators["MostFrequentWordGenerator"] = new(MostFrequentWordGenerator)
+	KAvailableGenearators["MostFrequentWordGenerator"] = new(ExtractLabelsGenerator)
 }

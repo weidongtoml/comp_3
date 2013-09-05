@@ -26,8 +26,6 @@ type FeagenManager struct {
 // by the feature_list, return nil if all generators have been successfully
 // created and initialized, error otherwise.
 func (mgr *FeagenManager) Initialize(feature_list string) error {
-	// Extract the list of available feature generators.
-
 	// Use only the specified.
 	generator_names := strings.Split(feature_list, ";")
 	for i, name := range generator_names {
