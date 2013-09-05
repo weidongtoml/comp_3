@@ -1,4 +1,4 @@
-// Copyright Weidong Liang 2013
+// Copyright Weidong Liang 2013. All rights reserved.
 
 package main
 
@@ -14,7 +14,7 @@ import (
 //Expected Input of the form:
 //	"Id","Title","Body","Tags"
 
-func main() {
+func main2() {
 	if len(os.Args) != 3 {
 		fmt.Printf("Converts CSV fields to tab separted records.\n")
 		fmt.Printf("Usage: %s csv_file output_tab_file\n", os.Args[0])
@@ -37,15 +37,31 @@ func main() {
 
 	csv_reader := csv.NewReader(in_fp)
 	tab_writer := bufio.NewWriter(out_fp)
-
-	label_freq := make(map[string]int)
 	for {
 		fields, err := csv_reader.Read()
 		if err == nil {
-			labels := strings.Split(fields[3], " ")
-			for _, label := range labels {
-				label_freq[label]++
+			for index, value := range fields {
+				if index == 0 {
+					tab_writer.WriteString(value)
+				} else if index == 1 || index == 2 {
+					proper_value := strings.Map(func(r rune) rune {
+						var v rune
+						switch r {
+						case rune('\n'), rune('\t'), rune('\f'):
+							v = rune(' ')
+							break
+						default:
+							v = r
+							break
+						}
+						return v
+					}, value)
+					tab_writer.WriteString("\t" + proper_value)
+				} else {
+					tab_writer.WriteString("\t" + value)
+				}
 			}
+			tab_writer.WriteByte('\n')
 		} else if err == io.EOF {
 			break
 		} else {
@@ -53,9 +69,4 @@ func main() {
 		}
 	}
 
-	for name, freq := range label_freq {
-		tab_writer.WriteString(fmt.Sprintf("%s\t%d\n", name, freq))
-	}
-
-	return
 }
