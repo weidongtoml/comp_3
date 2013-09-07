@@ -1,0 +1,1 @@
+data_extraction.exe split_records "..\..\..\data\Train.csv" "..\..\..\data\train_split" 50000

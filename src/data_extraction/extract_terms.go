@@ -4,111 +4,115 @@ package main
 
 import (
 	"bufio"
-	"encoding/csv"
 	"fmt"
-	//	"github.com/reiver/go-porterstemmer"
-	"io"
+	"github.com/weidongtoml/go_common/util"
 	"log"
 	"os"
+	"sort"
 	"strings"
+	"unicode"
 )
 
 //Expected Input of the form:
 //	"Id","Title","Body","Tags"
-
-func ProcessCSVFieldsWith(csv_file string, processor func([]string)) {
-	in_fp, err := os.Open(csv_file)
-	if err != nil {
-		log.Printf("Failed to open file %s: %s.\n", csv_file, err)
-		return
-	}
-	defer in_fp.Close()
-
-	csv_reader := csv.NewReader(in_fp)
-	for {
-		fields, err := csv_reader.Read()
-		if err == nil {
-			processor(fields)
-		} else if err == io.EOF {
-			break
-		} else {
-			log.Printf("Failed to process record: %s.\n", err)
-		}
-	}
-
-}
 
 type tf_idf_T struct {
 	tf  int
 	idf int
 }
 
-func main() {
-	if len(os.Args) != 5 {
-		fmt.Printf("Extract term frequencies from the records.\n")
-		fmt.Printf("Usage: %s csv_file non_stemmer_file term_frequencies_file tf_idf_file\n", os.Args[0])
+func LoadLabels(label_file string) (map[string]bool, error) {
+	label_map := make(map[string]bool)
+	err := util.ForEachLineInFile(label_file, func(line string) (bool, error) {
+		fields := strings.Fields(line)
+		label_map[fields[0]] = true
+		return true, nil
+	})
+	return label_map, err
+}
+
+func TermExtractionMain(csv_file, label_file, term_freq_file, tf_idf_file string) {
+	label_map, err := LoadLabels(label_file)
+	if err != nil {
+		log.Printf("Failed to load label: %s", err)
 		return
 	}
 
-	csv_file := os.Args[1]
-	non_stemmer_file := os.Args[2]
-	term_freq_file := os.Args[3]
-	tf_idf_file := os.Args[4]
+	term_freq_fd, err := os.Create(term_freq_file)
+	if err != nil {
+		log.Printf("Failed to create Term Frequeny File: %s, %s.", term_freq_file, err)
+		return
+	}
+	defer term_freq_fd.Close()
+	term_freq_writer := bufio.NewWriter(term_freq_fd)
 
 	tf_idf_map := make(map[string]tf_idf_T)
+	ProcessCSVFieldsWith(csv_file, func(fields []string) error {
+		text := fields[1] + fields[2]
 
-	do_title := true
-	do_body := true
-
-	ProcessCSVFieldsWith(csv_file, func(fields []string) {
-		for i := 1; i <= 2; i++ {
-			if i == 1 && !do_title {
+		text_only := strings.ToLower(StripCodeSectionFromHTML(text))
+		//fmt.Printf("Process: %s\n", text_only)
+		words := strings.FieldsFunc(text_only, func(r rune) bool {
+			return (unicode.IsSpace(r) ||
+				(unicode.IsPunct(r) && r != '#' && r != '.' && r != '-' && r != '+'))
+		})
+		sort.Strings(words)
+		prev := ""
+		cnt := 0
+		output_line := ""
+		for _, w := range words {
+			if w == "" {
 				continue
 			}
-			if i == 2 && !do_body {
+			//trim trailing .
+			last_index := len(w) - 1
+			for ; last_index >= 0 && w[last_index] == '.'; last_index-- {
+			}
+			if last_index < 0 {
 				continue
 			}
-			text := fields[i]
-			//Filter text out of <code></code> <pre></pre> sections and remove html
-			//tags, such as <p></p>, <strong></strong> etc.
-			filtered_test := ""
-			const (
-				kTagStart = iota
-				kTagBody
-				kTagEnd
-				kBody
-			)
-			state := kBody
-			cur_text := ""
-			for _, c := range text {
-				switch c {
-				case '<':
-					state := kTagBody
-					break
-				case '>':
-					state := kTagEnd
-					break
-				default:
-					if state == kTagBody {
-						cur_text += c
-					} else if state == kTagEnd {
+			w = w[0 : last_index+1]
 
-					}
+			if !label_map[w] {
+				w = string(Stem([]byte(w)))
+			}
+			if w == prev {
+				cnt++
+			} else {
+				if prev != "" {
+					cur_tf_idf := tf_idf_map[prev]
+					tf_idf_map[prev] = tf_idf_T{cur_tf_idf.tf + cnt, cur_tf_idf.idf + 1}
 
-					break
+					output_line += fmt.Sprintf("%s:%d ", prev, cnt)
 				}
+				cnt = 1
+				prev = w
 			}
 		}
+		if prev != "" {
+			cur_tf_idf := tf_idf_map[prev]
+			tf_idf_map[prev] = tf_idf_T{cur_tf_idf.tf + cnt, cur_tf_idf.idf + 1}
+
+			output_line += fmt.Sprintf("%s:%d", prev, cnt)
+		}
+		output_line = fields[3] + " | " + output_line
+		//fmt.Printf("Out: %s\n\n", output_line)
+		term_freq_writer.WriteString(output_line + "\n")
+		return nil
 	})
 
-	out_fp, err := os.Create(os.Args[2])
+	tf_idf_fd, err := os.Create(tf_idf_file)
 	if err != nil {
-		fmt.Print("Failed to create output file %s: %s.\n", os.Args[2], err)
+		log.Printf("Failed to create TF-IDF file: %s, %s.", tf_idf_file, err)
 		return
 	}
-	defer out_fp.Close()
+	defer tf_idf_fd.Close()
+	tf_idf_writer := bufio.NewWriter(tf_idf_fd)
 
-	tab_writer := bufio.NewWriter(out_fp)
+	for k, v := range tf_idf_map {
+		tf_idf_writer.WriteString(fmt.Sprintf("%s\t%f\t%d\t%d\n",
+			k, float64(v.tf)/float64(v.idf), v.tf, v.idf))
+	}
 
 	return
 }

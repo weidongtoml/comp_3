@@ -1,0 +1,1 @@
+data_extraction.exe  extract_terms "..\..\..\data\Train_sample.csv"  "..\..\data\label_distribution.txt"  "..\..\data\term_freq_sample.txt"  "..\..\data\tf_idf_sample.txt"
